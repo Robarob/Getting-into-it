@@ -1,0 +1,65 @@
+from pdf2image import convert_from_path
+from PIL import Image, UnidentifiedImageError
+from pathlib import Path
+import fitz  # PyMuPDF for PDF processing
+import tempfile
+import utils
+from pytesseract import image_to_string
+
+# Image Processing Functions
+def extract_images_from_image(file_path):
+    """
+    Extrahiert Bilder aus unterstützten Bildformaten und führt OCR für Text durch.
+    """
+    try:
+        img = Image.open(file_path)
+        img = img.convert("RGB")
+
+        temp_img_path = save_temp_image(img, file_path.stem)
+
+        text = image_to_string(Image.open(temp_img_path), lang="deu+eng")
+        return {"text": text, "image": temp_img_path}
+    except Exception as e:
+        utils.log_error(f"Fehler beim Verarbeiten von Bilddatei {file_path}: {e}")
+        return {"text": "", "image": None}
+
+def extract_text_and_images_from_pdf(pdf_path, poppler_path=None):
+    """
+    Extrahiert Text und Bilder aus einer PDF mit OCR-Unterstützung.
+    """
+    try:
+        text = ""
+        images = []
+
+        pages = convert_from_path(pdf_path, poppler_path=poppler_path)
+
+        for page_num, page in enumerate(pages):
+            temp_image_path = Path(tempfile.gettempdir()) / f"{Path(pdf_path).stem}_page_{page_num}.png"
+            page.save(temp_image_path, "PNG")
+
+            ocr_text = image_to_string(Image.open(temp_image_path), lang="deu+eng")
+            text += f"--- Seite {page_num + 1} ---\n{ocr_text}\n"
+
+            images.append(temp_image_path)
+
+        return text.strip(), images
+
+    except Exception as e:
+        utils.log_error(f"Fehler beim Extrahieren aus PDF {pdf_path}: {e}")
+        return "", []
+
+def save_temp_image(image, name):
+    """
+    Speichert ein Bild temporär im PNG-Format und gibt den Pfad zurück.
+    """
+    try:
+        temp_dir = Path(tempfile.gettempdir())
+        temp_img_path = temp_dir / f"{name}_processed.png"
+        image.save(temp_img_path, format="PNG")
+
+        utils.debug_log(f"Bild erfolgreich gespeichert: {temp_img_path}")
+        return temp_img_path
+
+    except Exception as e:
+        utils.log_error(f"Fehler beim Speichern eines temporären Bildes: {e}")
+        return None

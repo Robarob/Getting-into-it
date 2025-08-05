@@ -1,0 +1,74 @@
+from pathlib import Path
+import utils
+import re
+
+def find_input_files(directory):
+    """
+    Sucht nach unterstützten Dateien im angegebenen Verzeichnis.
+
+    Unterstützte Formate: .md, .pdf, .docx, .png, .jpg, .jpeg, .webp, .xlsx
+
+    :param directory: Das Verzeichnis, in dem gesucht werden soll
+    :return: Liste von Pfaden zu unterstützten Dateien
+    """
+    input_files = []
+
+    try:
+        for file in Path(directory).rglob("*"):
+            if file.suffix.lower() in ['.md', '.pdf', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.xlsx']:
+                input_files.append(file)
+                utils.debug_log(f"Datei gefunden: {file}")
+
+        if not input_files:
+            utils.debug_log(f"Keine unterstützten Dateien im Verzeichnis gefunden: {directory}")
+
+        return input_files
+
+    except Exception as e:
+        utils.log_error(f"Fehler beim Durchsuchen des Verzeichnisses: {e}", context={"directory": str(directory)})
+        return []
+
+def standardize_formatting(doc_path, output_path):
+    """
+    Standardisiert die Formatierung eines Word-Dokuments:
+    - Vereinheitlicht Überschriften.
+    - Entfernt doppelte Leerzeilen.
+    - Markiert unvollständige Inhalte.
+    """
+    from docx import Document
+    doc = Document(doc_path)
+    header_regex = re.compile(r'^(#+)\s*(.*)')  # Markdown-Style Überschriften
+    placeholder_regex = re.compile(r'___|\(Hier.*?\)|\[.*?\]')  # Platzhalter erkennen
+
+    for paragraph in doc.paragraphs:
+        match = header_regex.match(paragraph.text)
+        if match:
+            level = len(match.group(1))
+            paragraph.text = match.group(2).strip()
+            paragraph.style = f'Heading {min(level, 3)}'
+
+        if placeholder_regex.search(paragraph.text):
+            paragraph.text = f"[UNVOLLSTÄNDIG] {paragraph.text}"
+
+        if not paragraph.text.strip():
+            paragraph.clear()
+
+    doc.save(output_path)
+    utils.debug_log(f"Formatierung abgeschlossen und gespeichert: {output_path}")
+
+def clean_text(text):
+    """
+    Bereinigt den Text:
+    - Entfernt Dateiendungen (.md)
+    - Entfernt Verlinkungen wie [[Maho#^xyz|Text]] und behält nur den Text.
+    - Entfernt NULL-Bytes und nicht-druckbare Steuerzeichen.
+    """
+    # Entferne Dateiendungen wie .md
+    text = re.sub(r'\.md', '', text)
+    # Bereinige Verlinkungen wie [[Maho#^xyz|Text]] -> nur "Text"
+    text = re.sub(r'\[\[.*?\|(.*?)\]\]', r'\1', text)
+    # Entferne sonstige ungewollte [[Maho]]-Strukturen
+    text = re.sub(r'\[\[.*?\]\]', '', text)
+    # Entferne NULL-Bytes und nicht-druckbare Steuerzeichen
+    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', text)
+    return text.strip()
